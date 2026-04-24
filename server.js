@@ -29,20 +29,20 @@ app.post('/webhook', async (req, res) => {
     customer = await stripe.customers.create({ email, name: name || undefined });
   }
 
-  // Create an invoice item
-  await stripe.invoiceItems.create({
-    customer: customer.id,
-    amount: amountCents,
-    currency: 'usd',
-    description: `Investment — ${name || email}`,
-  });
-
-  // Create and finalize the invoice, which sends it to the customer
+  // Create the invoice first so the item can be explicitly attached to it
   const invoice = await stripe.invoices.create({
     customer: customer.id,
     collection_method: 'send_invoice',
     days_until_due: 30,
     auto_advance: true,
+  });
+
+  await stripe.invoiceItems.create({
+    customer: customer.id,
+    invoice: invoice.id,
+    amount: amountCents,
+    currency: 'usd',
+    description: `Investment — ${name || email}`,
   });
 
   await stripe.invoices.sendInvoice(invoice.id);
