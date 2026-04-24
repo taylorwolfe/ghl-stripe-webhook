@@ -13,7 +13,7 @@ app.post('/webhook', async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields: email, investment_amount' });
   }
 
-  const amountCents = Math.round(parseFloat(investment_amount) * 100);
+  const amountCents = Math.round(parseFloat(String(investment_amount).replace(/[^0-9.]/g, '')) * 100);
   if (isNaN(amountCents) || amountCents <= 0) {
     return res.status(400).json({ error: 'investment_amount must be a positive number' });
   }
