@@ -2,9 +2,94 @@ const express = require('express');
 const Stripe = require('stripe');
 
 const app = express();
-app.use(express.json());
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+const GHL_API_KEY = process.env.GHL_API_KEY;
+const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID;
+const GHL_BASE = 'https://services.leadconnectorhq.com';
+
+// /stripe-webhook needs the raw body for signature verification — register
+// this route BEFORE the global express.json() middleware
+app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error('Stripe signature verification failed:', err.message);
+    return res.status(400).json({ error: `Webhook signature verification failed: ${err.message}` });
+  }
+
+  if (event.type !== 'invoice.paid') {
+    return res.status(200).json({ received: true });
+  }
+
+  const invoice = event.data.object;
+  const customerId = invoice.customer;
+
+  // Fetch the customer from Stripe to get their email
+  const customer = await stripe.customers.retrieve(customerId);
+  const email = customer.email;
+
+  if (!email) {
+    console.error(`No email on Stripe customer ${customerId}`);
+    return res.status(200).json({ received: true });
+  }
+
+  console.log(`invoice.paid for ${email}, invoice ${invoice.id}`);
+
+  // Look up the contact in GHL by email
+  const searchRes = await fetch(
+    `${GHL_BASE}/contacts/?email=${encodeURIComponent(email)}&locationId=${GHL_LOCATION_ID}`,
+    {
+      headers: {
+        Authorization: `Bearer ${GHL_API_KEY}`,
+        Version: '2021-07-28',
+      },
+    }
+  );
+
+  if (!searchRes.ok) {
+    const body = await searchRes.text();
+    console.error('GHL contact search failed:', searchRes.status, body);
+    return res.status(500).json({ error: 'GHL contact search failed' });
+  }
+
+  const searchData = await searchRes.json();
+  const contact = searchData.contacts?.[0];
+
+  if (!contact) {
+    console.error(`No GHL contact found for email: ${email}`);
+    return res.status(200).json({ received: true });
+  }
+
+  // Merge the new tag with any existing tags to avoid overwriting them
+  const existingTags = contact.tags || [];
+  const updatedTags = Array.from(new Set([...existingTags, 'Payment Received']));
+
+  const updateRes = await fetch(`${GHL_BASE}/contacts/${contact.id}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${GHL_API_KEY}`,
+      Version: '2021-07-28',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ tags: updatedTags }),
+  });
+
+  if (!updateRes.ok) {
+    const body = await updateRes.text();
+    console.error('GHL contact update failed:', updateRes.status, body);
+    return res.status(500).json({ error: 'GHL contact update failed' });
+  }
+
+  console.log(`Tagged GHL contact ${contact.id} (${email}) with "Payment Received"`);
+  return res.status(200).json({ received: true });
+});
+
+// Global JSON parser for all other routes
+app.use(express.json());
 
 app.post('/webhook', async (req, res) => {
   console.log('GHL webhook payload:', JSON.stringify(req.body, null, 2));
