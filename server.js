@@ -7,6 +7,8 @@ app.use(express.json());
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 app.post('/webhook', async (req, res) => {
+  console.log('GHL webhook payload:', JSON.stringify(req.body, null, 2));
+
   const { email, name, investment_amount } = req.body;
 
   if (!email || !investment_amount) {
