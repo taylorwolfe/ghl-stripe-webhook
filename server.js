@@ -41,7 +41,7 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
 
   // Look up the contact in GHL by email
   const searchRes = await fetch(
-    `${GHL_BASE}/contacts/?email=${encodeURIComponent(email)}&locationId=${GHL_LOCATION_ID}`,
+    `${GHL_BASE}/contacts/?query=${encodeURIComponent(email)}&locationId=${GHL_LOCATION_ID}`,
     {
       headers: {
         Authorization: `Bearer ${GHL_API_KEY}`,
