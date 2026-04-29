@@ -441,7 +441,7 @@ app.post('/send-contract', async (req, res) => {
       files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: pdf.toString('base64') }],
       recipients: [{ id: '1', name: clientName, email: clientEmail }],
       fields: [[
-        { type: 'signature', recipient_id: '1', page: 3, x: 10, y: 52, width: 50, height: 15 },
+        { type: 'signature', recipient_id: '1', page: 3, x: 72, y: 370, width: 200, height: 50 },
       ]],
       send_emails: true,
     }),
