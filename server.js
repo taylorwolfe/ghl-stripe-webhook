@@ -149,6 +149,7 @@ const CHROME_CANDIDATES = {
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
   ],
   linux: [
+    '/nix/var/nix/profiles/default/bin/chromium',
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium-browser',
@@ -163,6 +164,11 @@ function getChromePath() {
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
   }
+  try {
+    const { execSync } = require('child_process');
+    const found = execSync('which chromium || which google-chrome || which chromium-browser', { encoding: 'utf8' }).trim().split('\n')[0];
+    if (found) return found;
+  } catch {}
   throw new Error(
     'Chrome executable not found. Install Chrome or set the CHROME_PATH environment variable.'
   );
