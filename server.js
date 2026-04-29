@@ -439,9 +439,9 @@ app.post('/send-contract', async (req, res) => {
     body: JSON.stringify({
       name: `Coaching Agreement — ${clientName}`,
       files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: pdf.toString('base64') }],
-      recipients: [{ id: '1', name: clientName, email: clientEmail, placeholder_name: 'Client' }],
+      recipients: [{ id: '1', name: clientName, email: clientEmail }],
       fields: [[
-        { type: 'signature', placeholder_id: 'Client', page: 2, x: 12, y: 60, width: 38, height: 6 },
+        { type: 'signature', recipient_id: '1', page: 2, x: 12, y: 60, width: 38, height: 6 },
       ]],
       send_emails: true,
     }),
