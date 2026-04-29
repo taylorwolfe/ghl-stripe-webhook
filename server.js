@@ -439,7 +439,16 @@ app.post('/send-contract', async (req, res) => {
     body: JSON.stringify({
       name: `Coaching Agreement — ${clientName}`,
       files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: pdf.toString('base64') }],
-      recipients: [{ id: '1', name: clientName, email: clientEmail }],
+      recipients: [
+        {
+          id: '1',
+          name: clientName,
+          email: clientEmail,
+          fields: [
+            { type: 'signature', required: true, page: 3, x: 12, y: 60, width: 38, height: 6 },
+          ],
+        },
+      ],
       send_emails: true,
     }),
   });
