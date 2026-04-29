@@ -8,6 +8,7 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const GHL_API_KEY = process.env.GHL_API_KEY;
 const GHL_LOCATION_ID = process.env.GHL_LOCATION_ID;
 const GHL_BASE = 'https://services.leadconnectorhq.com';
+const SIGNWELL_BASE = 'https://www.signwell.com/api/v1';
 
 // /stripe-webhook needs the raw body for signature verification — register
 // this route BEFORE the global express.json() middleware
@@ -352,25 +353,16 @@ function buildContractHTML({ clientName, investmentAmount, startDate, customTerm
 </html>`;
 }
 
-app.post('/generate-contract', async (req, res) => {
-  const { clientName, investmentAmount, startDate, customTerms } = req.body;
-
-  if (!clientName || !investmentAmount || !startDate) {
-    return res.status(400).json({ error: 'Missing required fields: clientName, investmentAmount, startDate' });
-  }
-
+async function generateContractPDF({ clientName, investmentAmount, startDate, customTerms }) {
   const html = buildContractHTML({ clientName, investmentAmount, startDate, customTerms });
-
   let browser;
   try {
     browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
     });
-
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
-
     const pdf = await page.pdf({
       format: 'Letter',
       printBackground: true,
@@ -381,16 +373,109 @@ app.post('/generate-contract', async (req, res) => {
       </div>`,
       margin: { top: '1in', right: '1in', bottom: '0.75in', left: '1in' },
     });
+    return Buffer.from(pdf);
+  } finally {
+    if (browser) await browser.close();
+  }
+}
 
+async function ghlAddTag(email, tag) {
+  const searchRes = await fetch(
+    `${GHL_BASE}/contacts/?query=${encodeURIComponent(email)}&locationId=${GHL_LOCATION_ID}`,
+    { headers: { Authorization: `Bearer ${GHL_API_KEY}`, Version: '2021-07-28' } }
+  );
+  if (!searchRes.ok) throw new Error(`GHL contact search failed: ${searchRes.status} ${await searchRes.text()}`);
+  const { contacts } = await searchRes.json();
+  const contact = contacts?.[0];
+  if (!contact) throw new Error(`No GHL contact found for email: ${email}`);
+  const updatedTags = Array.from(new Set([...(contact.tags || []), tag]));
+  const updateRes = await fetch(`${GHL_BASE}/contacts/${contact.id}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${GHL_API_KEY}`, Version: '2021-07-28', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tags: updatedTags }),
+  });
+  if (!updateRes.ok) throw new Error(`GHL contact update failed: ${updateRes.status} ${await updateRes.text()}`);
+  console.log(`Tagged GHL contact ${contact.id} (${email}) with "${tag}"`);
+}
+
+app.post('/generate-contract', async (req, res) => {
+  const { clientName, investmentAmount, startDate, customTerms } = req.body;
+  if (!clientName || !investmentAmount || !startDate) {
+    return res.status(400).json({ error: 'Missing required fields: clientName, investmentAmount, startDate' });
+  }
+  try {
+    const pdf = await generateContractPDF({ clientName, investmentAmount, startDate, customTerms });
     const safeName = clientName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', `attachment; filename="coaching-contract-${safeName}.pdf"`);
-    res.send(Buffer.from(pdf));
+    res.send(pdf);
   } catch (err) {
     console.error('PDF generation failed:', err.message);
     res.status(500).json({ error: 'PDF generation failed', details: err.message });
-  } finally {
-    if (browser) await browser.close();
+  }
+});
+
+app.post('/send-contract', async (req, res) => {
+  const { clientName, clientEmail, investmentAmount, startDate, customTerms } = req.body;
+  if (!clientName || !clientEmail || !investmentAmount || !startDate) {
+    return res.status(400).json({ error: 'Missing required fields: clientName, clientEmail, investmentAmount, startDate' });
+  }
+
+  let pdf;
+  try {
+    pdf = await generateContractPDF({ clientName, investmentAmount, startDate, customTerms });
+  } catch (err) {
+    console.error('PDF generation failed:', err.message);
+    return res.status(500).json({ error: 'PDF generation failed', details: err.message });
+  }
+
+  const safeName = clientName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  const signwellRes = await fetch(`${SIGNWELL_BASE}/documents/`, {
+    method: 'POST',
+    headers: {
+      'X-Api-Key': process.env.SIGNWELL_API_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: `Coaching Agreement — ${clientName}`,
+      files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: pdf.toString('base64') }],
+      recipients: [{ id: '1', name: clientName, email: clientEmail }],
+      send_emails: true,
+    }),
+  });
+
+  if (!signwellRes.ok) {
+    const body = await signwellRes.text();
+    console.error('SignWell API error:', signwellRes.status, body);
+    return res.status(500).json({ error: 'Failed to send contract via SignWell', details: body });
+  }
+
+  const doc = await signwellRes.json();
+  console.log(`Contract sent to ${clientEmail} via SignWell, document ID: ${doc.id}`);
+  return res.status(200).json({
+    success: true,
+    documentId: doc.id,
+    signingUrl: doc.recipients?.[0]?.signing_url,
+  });
+});
+
+app.post('/signwell-webhook', async (req, res) => {
+  res.status(200).json({ received: true });
+
+  const { event_type, document } = req.body;
+  if (event_type !== 'document_completed') return;
+
+  const recipient = document?.recipients?.[0];
+  if (!recipient?.email) {
+    console.error('SignWell webhook: no recipient email on completed document', document?.id);
+    return;
+  }
+
+  console.log(`Contract signed by ${recipient.email}, document ${document.id}`);
+  try {
+    await ghlAddTag(recipient.email, 'Contract Signed');
+  } catch (err) {
+    console.error('SignWell webhook GHL update failed:', err.message);
   }
 });
 
