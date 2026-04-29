@@ -169,13 +169,12 @@ function buildContractHTML({ clientName, investmentAmount, startDate, customTerm
   }
 
   .logo {
-    font-family: 'Arial Black', Arial, sans-serif;
-    font-weight: 900;
-    font-size: 36pt;
-    color: #1414D4;
-    line-height: 1.05;
-    letter-spacing: -0.5px;
     margin-bottom: 44px;
+  }
+
+  .logo img {
+    height: 80px;
+    width: auto;
   }
 
   h1 {
@@ -231,17 +230,16 @@ function buildContractHTML({ clientName, investmentAmount, startDate, customTerm
     font-size: 10.5pt;
   }
 
-  .coach-sig {
-    font-family: 'Brush Script MT', 'Segoe Script', 'Lucida Handwriting', cursive;
-    font-size: 26pt;
-    line-height: 1;
+  .coach-sig img {
+    height: 56px;
+    width: auto;
     vertical-align: bottom;
   }
 </style>
 </head>
 <body>
 
-<div class="logo">KASH &amp;CO.<br>COACHING</div>
+<div class="logo"><img src="https://pub-bc05478d0dc049fbb076e6e51d59fe82.r2.dev/kash-coaching-gmail-logo1.png" alt="Kash &amp; Co. Coaching"></div>
 
 <h1>COACHING AGREEMENT</h1>
 
@@ -345,8 +343,7 @@ function buildContractHTML({ clientName, investmentAmount, startDate, customTerm
   <div>
     <div class="sig-label">Coach Signature:</div>
     <div style="margin-top:6px;">
-      <span class="coach-sig">Kash</span>
-      <span style="display:inline-block;width:190px;border-bottom:1.5px solid #1a1a1a;vertical-align:bottom;margin-bottom:4px;"></span>
+      <span class="coach-sig"><img src="https://pub-bc05478d0dc049fbb076e6e51d59fe82.r2.dev/KT-sig.png" alt="Coach Signature"></span>
     </div>
   </div>
 
@@ -372,7 +369,7 @@ app.post('/generate-contract', async (req, res) => {
     });
 
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'load' });
+    await page.setContent(html, { waitUntil: 'networkidle0' });
 
     const pdf = await page.pdf({
       format: 'Letter',
