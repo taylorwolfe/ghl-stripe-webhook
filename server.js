@@ -388,7 +388,7 @@ app.post('/generate-contract', async (req, res) => {
     const safeName = clientName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', `attachment; filename="coaching-contract-${safeName}.pdf"`);
-    res.send(pdf);
+    res.send(Buffer.from(pdf));
   } catch (err) {
     console.error('PDF generation failed:', err.message);
     res.status(500).json({ error: 'PDF generation failed', details: err.message });
