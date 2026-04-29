@@ -434,5 +434,19 @@ app.post('/generate-contract', async (req, res) => {
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+app.get('/debug-chrome', (_req, res) => {
+  const { execSync } = require('child_process');
+  const run = (cmd) => { try { return execSync(cmd, { encoding: 'utf8' }).trim(); } catch (e) { return e.message; } };
+  res.json({
+    CHROME_PATH: process.env.CHROME_PATH,
+    PATH: process.env.PATH,
+    whichChromium: run('which chromium'),
+    whichGoogleChrome: run('which google-chrome'),
+    nixBinChromium: run('ls /nix/var/nix/profiles/default/bin/ | grep -i chrom'),
+    findChromium: run('find /nix -name "chromium" -type f 2>/dev/null | head -3'),
+    usrBinChromium: run('ls /usr/bin/ | grep -i chrom'),
+  });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
