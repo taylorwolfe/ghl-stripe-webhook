@@ -1,11 +1,5 @@
-[phases.setup]
-nixPkgs = ["chromium"]
-
 [phases.install]
 cmds = ["npm ci"]
 
 [start]
 cmd = "node server.js"
-
-[variables]
-CHROME_PATH = "/nix/var/nix/profiles/default/bin/chromium"

@@ -1,7 +1,6 @@
 const express = require('express');
 const Stripe = require('stripe');
-const puppeteer = require('puppeteer-core');
-const fs = require('fs');
+const puppeteer = require('puppeteer');
 
 const app = express();
 
@@ -140,39 +139,6 @@ app.post('/webhook', async (req, res) => {
 });
 
 // --- Contract PDF generation ---
-
-// Ordered list of candidate Chrome paths per platform.
-// Override with CHROME_PATH env var for non-standard installs.
-const CHROME_CANDIDATES = {
-  darwin: [
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  ],
-  linux: [
-    '/nix/var/nix/profiles/default/bin/chromium',
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/chromium',
-    '/snap/bin/chromium',
-  ],
-};
-
-function getChromePath() {
-  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
-  const candidates = CHROME_CANDIDATES[process.platform] || [];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  try {
-    const { execSync } = require('child_process');
-    const found = execSync('which chromium || which google-chrome || which chromium-browser', { encoding: 'utf8' }).trim().split('\n')[0];
-    if (found) return found;
-  } catch {}
-  throw new Error(
-    'Chrome executable not found. Install Chrome or set the CHROME_PATH environment variable.'
-  );
-}
 
 function escapeHtml(str) {
   return String(str)
@@ -401,7 +367,6 @@ app.post('/generate-contract', async (req, res) => {
   let browser;
   try {
     browser = await puppeteer.launch({
-      executablePath: getChromePath(),
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
     });
@@ -434,19 +399,6 @@ app.post('/generate-contract', async (req, res) => {
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
-app.get('/debug-chrome', (_req, res) => {
-  const { execSync } = require('child_process');
-  const run = (cmd) => { try { return execSync(cmd, { encoding: 'utf8' }).trim(); } catch (e) { return e.message; } };
-  res.json({
-    CHROME_PATH: process.env.CHROME_PATH,
-    PATH: process.env.PATH,
-    whichChromium: run('which chromium'),
-    whichGoogleChrome: run('which google-chrome'),
-    nixBinChromium: run('ls /nix/var/nix/profiles/default/bin/ | grep -i chrom'),
-    findChromium: run('find /nix -name "chromium" -type f 2>/dev/null | head -3'),
-    usrBinChromium: run('ls /usr/bin/ | grep -i chrom'),
-  });
-});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
