@@ -338,7 +338,6 @@ function buildContractHTML({ clientName, investmentAmount, startDate, customTerm
 
   <div style="margin-bottom:28px;">
     <div class="sig-label">Client Signature:</div>
-    <div class="sig-blank"></div>
   </div>
 
   <div>
