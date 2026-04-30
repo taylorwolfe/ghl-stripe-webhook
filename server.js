@@ -405,7 +405,8 @@ app.post('/generate-contract', async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields: clientName, investmentAmount, startDate' });
   }
   try {
-    const pdf = await generateContractPDF({ clientName, investmentAmount, startDate, customTerms });
+    const normalizedTerms = (customTerms || '').replace(/\\n/g, '\n');
+    const pdf = await generateContractPDF({ clientName, investmentAmount, startDate, customTerms: normalizedTerms });
     const safeName = clientName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', `attachment; filename="coaching-contract-${safeName}.pdf"`);
@@ -422,9 +423,11 @@ app.post('/send-contract', async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields: clientName, clientEmail, investmentAmount, startDate' });
   }
 
+  const normalizedTerms = (customTerms || '').replace(/\\n/g, '\n');
+
   let pdf;
   try {
-    pdf = await generateContractPDF({ clientName, investmentAmount, startDate, customTerms });
+    pdf = await generateContractPDF({ clientName, investmentAmount, startDate, customTerms: normalizedTerms });
   } catch (err) {
     console.error('PDF generation failed:', err.message);
     return res.status(500).json({ error: 'PDF generation failed', details: err.message });
