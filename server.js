@@ -315,6 +315,19 @@ function buildContractHTML({ clientName, investmentAmount, startDate, customTerm
 
 <div style="margin-top:16px;">
 
+  <!-- Signatures row — fixed position regardless of custom terms length -->
+  <div style="display:flex;gap:48px;margin-bottom:32px;">
+    <div style="flex:1;">
+      <div class="sig-label">Client Signature:</div>
+    </div>
+    <div style="flex:1;">
+      <div class="sig-label">Coach Signature:</div>
+      <div style="margin-top:6px;">
+        <span class="coach-sig"><img src="https://pub-bc05478d0dc049fbb076e6e51d59fe82.r2.dev/KT-sig.png" alt="Coach Signature"></span>
+      </div>
+    </div>
+  </div>
+
   <div style="margin-bottom:18px;">
     <span class="sig-label">Client Name:</span>
     <span class="sig-value">${name}</span>
@@ -331,20 +344,9 @@ function buildContractHTML({ clientName, investmentAmount, startDate, customTerm
     </div>
   </div>
 
-  <div style="margin-bottom:28px;">
+  <div>
     <div class="sig-label">Custom Terms (Special arrangements, if applicable. If not, leave blank):</div>
     <div class="custom-terms-box">${terms}</div>
-  </div>
-
-  <div style="margin-bottom:28px;">
-    <div class="sig-label">Client Signature:</div>
-  </div>
-
-  <div>
-    <div class="sig-label">Coach Signature:</div>
-    <div style="margin-top:6px;">
-      <span class="coach-sig"><img src="https://pub-bc05478d0dc049fbb076e6e51d59fe82.r2.dev/KT-sig.png" alt="Coach Signature"></span>
-    </div>
   </div>
 
 </div>
@@ -441,7 +443,7 @@ app.post('/send-contract', async (req, res) => {
       files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: pdf.toString('base64') }],
       recipients: [{ id: '1', name: clientName, email: clientEmail }],
       fields: [[
-        { type: 'signature', recipient_id: '1', page: 3, x: 72, y: 370, width: 200, height: 50 },
+        { type: 'signature', recipient_id: '1', page: 3, x: 72, y: 248, width: 200, height: 50 },
       ]],
       send_emails: true,
     }),
