@@ -380,7 +380,14 @@ async function generateContractPDF({ clientName, investmentAmount, startDate, cu
   }
 }
 
+const triggeredDocuments = new Set();
+
 async function triggerGhlWorkflow({ email, name, documentId }) {
+  if (triggeredDocuments.has(documentId)) {
+    console.log(`GHL workflow already triggered for document ${documentId}, skipping`);
+    return false;
+  }
+  triggeredDocuments.add(documentId);
   const webhookUrl = process.env.GHL_WORKFLOW_WEBHOOK_URL;
   if (!webhookUrl) throw new Error('GHL_WORKFLOW_WEBHOOK_URL env var not set');
   const res = await fetch(webhookUrl, {
@@ -390,6 +397,51 @@ async function triggerGhlWorkflow({ email, name, documentId }) {
   });
   if (!res.ok) throw new Error(`GHL workflow trigger failed: ${res.status} ${await res.text()}`);
   console.log(`Triggered GHL workflow for ${email}, document ${documentId}`);
+  return true;
+}
+
+async function fetchSignwellDocument(documentId) {
+  const res = await fetch(`${SIGNWELL_BASE}/documents/${documentId}`, {
+    headers: { 'X-Api-Key': process.env.SIGNWELL_API_KEY },
+  });
+  if (!res.ok) throw new Error(`SignWell API error: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+function pollUntilSigned(documentId) {
+  const INTERVAL_MS = 2 * 60 * 1000;
+  const TIMEOUT_MS = 24 * 60 * 60 * 1000;
+  const startTime = Date.now();
+
+  async function attempt() {
+    if (triggeredDocuments.has(documentId)) {
+      console.log(`Polling stopped for document ${documentId}: already triggered`);
+      return;
+    }
+    if (Date.now() - startTime >= TIMEOUT_MS) {
+      console.log(`Polling timed out for document ${documentId} after 24 hours`);
+      return;
+    }
+    try {
+      const doc = await fetchSignwellDocument(documentId);
+      if (doc.status?.toLowerCase() === 'completed') {
+        const recipient = doc.recipients?.[0];
+        if (recipient?.email) {
+          await triggerGhlWorkflow({ email: recipient.email, name: recipient.name, documentId });
+        } else {
+          console.error(`Polling: document ${documentId} completed but has no recipient email`);
+        }
+        return;
+      }
+      console.log(`Polling document ${documentId}: status=${doc.status}, next check in 2m`);
+    } catch (err) {
+      console.error(`Polling error for document ${documentId}:`, err.message);
+    }
+    setTimeout(attempt, INTERVAL_MS);
+  }
+
+  console.log(`Started polling for document ${documentId}`);
+  setTimeout(attempt, INTERVAL_MS);
 }
 
 async function ghlAddTag(email, tag) {
@@ -481,6 +533,7 @@ app.post('/send-contract', async (req, res) => {
 
   const doc = await signwellRes.json();
   console.log(`Contract sent to ${clientEmail} via SignWell, document ID: ${doc.id}`);
+  pollUntilSigned(doc.id);
   return res.status(200).json({
     success: true,
     documentId: doc.id,
@@ -508,18 +561,11 @@ app.post('/signwell-webhook', async (req, res) => {
   }
 });
 
-// Polling fallback — call this from GHL or manually to force a status check
+// Manual status check — also usable from GHL as a fallback
 app.get('/check-contract/:documentId', async (req, res) => {
   const { documentId } = req.params;
   try {
-    const signwellRes = await fetch(`${SIGNWELL_BASE}/documents/${documentId}`, {
-      headers: { 'X-Api-Key': process.env.SIGNWELL_API_KEY },
-    });
-    if (!signwellRes.ok) {
-      const body = await signwellRes.text();
-      return res.status(502).json({ error: 'SignWell API error', details: body });
-    }
-    const doc = await signwellRes.json();
+    const doc = await fetchSignwellDocument(documentId);
     const status = doc.status;
     console.log(`Polled document ${documentId}: status=${status}`);
 
@@ -528,8 +574,8 @@ app.get('/check-contract/:documentId', async (req, res) => {
       if (!recipient?.email) {
         return res.status(200).json({ status, triggered: false, reason: 'no recipient email on document' });
       }
-      await triggerGhlWorkflow({ email: recipient.email, name: recipient.name, documentId });
-      return res.status(200).json({ status, triggered: true, email: recipient.email });
+      const triggered = await triggerGhlWorkflow({ email: recipient.email, name: recipient.name, documentId });
+      return res.status(200).json({ status, triggered, email: recipient.email });
     }
 
     return res.status(200).json({ status, triggered: false });
