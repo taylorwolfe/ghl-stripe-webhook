@@ -537,6 +537,15 @@ app.get('/check-contract/:documentId', async (req, res) => {
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+app.get('/debug-env', (_req, res) => {
+  const keys = ['GHL_WORKFLOW_WEBHOOK_URL', 'GHL_API_KEY', 'GHL_LOCATION_ID', 'SIGNWELL_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'];
+  const result = {};
+  for (const key of keys) {
+    result[key] = process.env[key] ? 'set' : 'MISSING';
+  }
+  res.json(result);
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
