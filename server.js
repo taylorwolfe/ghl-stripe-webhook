@@ -409,7 +409,7 @@ async function fetchSignwellDocument(documentId) {
 }
 
 function pollUntilSigned(documentId) {
-  const INTERVAL_MS = 2 * 60 * 1000;
+  const INTERVAL_MS = 30 * 1000;
   const TIMEOUT_MS = 24 * 60 * 60 * 1000;
   const startTime = Date.now();
 
@@ -433,7 +433,7 @@ function pollUntilSigned(documentId) {
         }
         return;
       }
-      console.log(`Polling document ${documentId}: status=${doc.status}, next check in 2m`);
+      console.log(`Polling document ${documentId}: status=${doc.status}, next check in 30s`);
     } catch (err) {
       console.error(`Polling error for document ${documentId}:`, err.message);
     }
