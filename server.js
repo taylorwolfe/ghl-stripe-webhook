@@ -441,7 +441,6 @@ app.post('/send-contract', async (req, res) => {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      test_mode: true,
       name: `Coaching Agreement — ${clientName}`,
       files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: pdf.toString('base64') }],
       recipients: [{ id: '1', name: clientName, email: clientEmail }],
