@@ -446,10 +446,14 @@ app.post('/send-contract', async (req, res) => {
   }
 
   const safeName = clientName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  const ccRecipients = process.env.COACH_EMAIL
+    ? [{ email: process.env.COACH_EMAIL }]
+    : [];
   const signwellPayload = {
     name: `Coaching Agreement — ${clientName}`,
     files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: '[base64 omitted]' }],
     recipients: [{ id: '1', name: clientName, email: clientEmail }],
+    ...(ccRecipients.length > 0 && { ccs: ccRecipients }),
     fields: [[
       { type: 'signature', recipient_id: '1', page: 3, x: 72, y: 120, width: 200, height: 50 },
     ]],
