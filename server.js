@@ -434,6 +434,17 @@ app.post('/send-contract', async (req, res) => {
   }
 
   const safeName = clientName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  const signwellPayload = {
+    name: `Coaching Agreement — ${clientName}`,
+    files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: '[base64 omitted]' }],
+    recipients: [{ id: '1', name: clientName, email: clientEmail }],
+    fields: [[
+      { type: 'signature', recipient_id: '1', page: 3, x: 72, y: 120, width: 200, height: 50 },
+    ]],
+    send_emails: true,
+    callback_url: 'https://ghl-stripe-webhook-production.up.railway.app/signwell-webhook',
+  };
+  console.log('SignWell request body:', JSON.stringify({ ...signwellPayload }, null, 2));
   const signwellRes = await fetch(`${SIGNWELL_BASE}/documents/`, {
     method: 'POST',
     headers: {
@@ -441,14 +452,8 @@ app.post('/send-contract', async (req, res) => {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      name: `Coaching Agreement — ${clientName}`,
+      ...signwellPayload,
       files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: pdf.toString('base64') }],
-      recipients: [{ id: '1', name: clientName, email: clientEmail }],
-      fields: [[
-        { type: 'signature', recipient_id: '1', page: 3, x: 72, y: 120, width: 200, height: 50 },
-      ]],
-      send_emails: true,
-      callback_url: 'https://ghl-stripe-webhook-production.up.railway.app/signwell-webhook',
     }),
   });
 
