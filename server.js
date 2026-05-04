@@ -519,7 +519,7 @@ app.get('/check-contract/:documentId', async (req, res) => {
     const status = doc.status;
     console.log(`Polled document ${documentId}: status=${status}`);
 
-    if (status === 'completed') {
+    if (status?.toLowerCase() === 'completed') {
       const recipient = doc.recipients?.[0];
       if (!recipient?.email) {
         return res.status(200).json({ status, triggered: false, reason: 'no recipient email on document' });
