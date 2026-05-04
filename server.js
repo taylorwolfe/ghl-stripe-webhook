@@ -480,9 +480,23 @@ app.post('/signwell-webhook', async (req, res) => {
 
   console.log(`Contract signed by ${recipient.email}, document ${document.id}`);
   try {
-    await ghlAddTag(recipient.email, 'Contract Signed');
+    const webhookUrl = process.env.GHL_WORKFLOW_WEBHOOK_URL;
+    if (!webhookUrl) throw new Error('GHL_WORKFLOW_WEBHOOK_URL env var not set');
+
+    const ghlRes = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: recipient.email,
+        name: recipient.name || '',
+        document_id: document.id,
+      }),
+    });
+
+    if (!ghlRes.ok) throw new Error(`GHL workflow trigger failed: ${ghlRes.status} ${await ghlRes.text()}`);
+    console.log(`Triggered GHL workflow for ${recipient.email}, document ${document.id}`);
   } catch (err) {
-    console.error('SignWell webhook GHL update failed:', err.message);
+    console.error('SignWell webhook GHL trigger failed:', err.message);
   }
 });
 
