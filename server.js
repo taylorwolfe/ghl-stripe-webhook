@@ -380,6 +380,18 @@ async function generateContractPDF({ clientName, investmentAmount, startDate, cu
   }
 }
 
+async function triggerGhlWorkflow({ email, name, documentId }) {
+  const webhookUrl = process.env.GHL_WORKFLOW_WEBHOOK_URL;
+  if (!webhookUrl) throw new Error('GHL_WORKFLOW_WEBHOOK_URL env var not set');
+  const res = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, name: name || '', document_id: documentId }),
+  });
+  if (!res.ok) throw new Error(`GHL workflow trigger failed: ${res.status} ${await res.text()}`);
+  console.log(`Triggered GHL workflow for ${email}, document ${documentId}`);
+}
+
 async function ghlAddTag(email, tag) {
   const searchRes = await fetch(
     `${GHL_BASE}/contacts/?query=${encodeURIComponent(email)}&locationId=${GHL_LOCATION_ID}`,
@@ -486,23 +498,40 @@ app.post('/signwell-webhook', async (req, res) => {
 
   console.log(`Contract signed by ${recipient.email}, document ${document.id}`);
   try {
-    const webhookUrl = process.env.GHL_WORKFLOW_WEBHOOK_URL;
-    if (!webhookUrl) throw new Error('GHL_WORKFLOW_WEBHOOK_URL env var not set');
-
-    const ghlRes = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: recipient.email,
-        name: recipient.name || '',
-        document_id: document.id,
-      }),
-    });
-
-    if (!ghlRes.ok) throw new Error(`GHL workflow trigger failed: ${ghlRes.status} ${await ghlRes.text()}`);
-    console.log(`Triggered GHL workflow for ${recipient.email}, document ${document.id}`);
+    await triggerGhlWorkflow({ email: recipient.email, name: recipient.name, documentId: document.id });
   } catch (err) {
     console.error('SignWell webhook GHL trigger failed:', err.message);
+  }
+});
+
+// Polling fallback — call this from GHL or manually to force a status check
+app.get('/check-contract/:documentId', async (req, res) => {
+  const { documentId } = req.params;
+  try {
+    const signwellRes = await fetch(`${SIGNWELL_BASE}/documents/${documentId}`, {
+      headers: { 'X-Api-Key': process.env.SIGNWELL_API_KEY },
+    });
+    if (!signwellRes.ok) {
+      const body = await signwellRes.text();
+      return res.status(502).json({ error: 'SignWell API error', details: body });
+    }
+    const doc = await signwellRes.json();
+    const status = doc.status;
+    console.log(`Polled document ${documentId}: status=${status}`);
+
+    if (status === 'completed') {
+      const recipient = doc.recipients?.[0];
+      if (!recipient?.email) {
+        return res.status(200).json({ status, triggered: false, reason: 'no recipient email on document' });
+      }
+      await triggerGhlWorkflow({ email: recipient.email, name: recipient.name, documentId });
+      return res.status(200).json({ status, triggered: true, email: recipient.email });
+    }
+
+    return res.status(200).json({ status, triggered: false });
+  } catch (err) {
+    console.error('check-contract error:', err.message);
+    return res.status(500).json({ error: err.message });
   }
 });
 
