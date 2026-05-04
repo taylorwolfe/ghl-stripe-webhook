@@ -448,6 +448,7 @@ app.post('/send-contract', async (req, res) => {
         { type: 'signature', recipient_id: '1', page: 3, x: 72, y: 120, width: 200, height: 50 },
       ]],
       send_emails: true,
+      callback_url: 'https://ghl-stripe-webhook-production.up.railway.app/signwell-webhook',
     }),
   });
 
