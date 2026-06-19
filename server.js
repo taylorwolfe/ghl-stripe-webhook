@@ -159,7 +159,8 @@ async function fetchContractTemplate(clientId, { clientName, startDate, investme
     .replace(/\{\{start_date\}\}/g, escapeHtml(startDate))
     .replace(/\{\{investment_amount\}\}/g, escapeHtml(investmentAmount))
     .replace(/\{\{package_name\}\}/g, escapeHtml(packageName || ''))
-    .replace(/\{\{custom_terms\}\}/g, escapeHtml(normalizedTerms));
+    .replace(/\{\{custom_terms\}\}/g, escapeHtml(normalizedTerms))
+    .replace('</head>', '<style>.logo img{max-height:80px;width:auto;}.coach-sig img{max-height:48px;width:auto;}</style></head>');
 }
 
 async function generateContractPDF(html) {
@@ -313,7 +314,8 @@ app.post('/send-contract', async (req, res) => {
     recipients: [{ id: '1', name: clientName, email: clientEmail }],
     ...(ccRecipients.length > 0 && { ccs: ccRecipients }),
     fields: [[
-      { type: 'signature', recipient_id: '1', page: 3, x: 72, y: 120, width: 200, height: 50 },
+      { type: 'signature', recipient_id: '1', anchor: 'SIGN_CLIENT' },
+      { type: 'signature', recipient_id: '1', anchor: 'SIGN_COACH' },
     ]],
     send_emails: true,
     callback_url: 'https://ghl-stripe-webhook-production.up.railway.app/signwell-webhook',
