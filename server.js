@@ -313,10 +313,7 @@ app.post('/send-contract', async (req, res) => {
     files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: '[base64 omitted]' }],
     recipients: [{ id: '1', name: clientName, email: clientEmail }],
     ...(ccRecipients.length > 0 && { ccs: ccRecipients }),
-    fields: [[
-      { type: 'signature', recipient_id: '1', anchor: 'SIGN_CLIENT' },
-      { type: 'signature', recipient_id: '1', anchor: 'SIGN_COACH' },
-    ]],
+    use_text_tags: true,
     send_emails: true,
     callback_url: 'https://ghl-stripe-webhook-production.up.railway.app/signwell-webhook',
   };
