@@ -314,7 +314,7 @@ app.post('/send-contract', async (req, res) => {
     recipients: [{ id: '1', name: clientName, email: clientEmail }],
     ...(ccRecipients.length > 0 && { ccs: ccRecipients }),
     fields: [[
-      { type: 'signature', recipient_id: '1', page: 2, x: 72, y: 237, width: 200, height: 50 },
+      { type: 'signature', recipient_id: '1', page: 2, x: 72, y: 500, width: 200, height: 50 },
     ]],
     send_emails: true,
     callback_url: 'https://ghl-stripe-webhook-production.up.railway.app/signwell-webhook',
