@@ -309,7 +309,7 @@ app.post('/send-contract', async (req, res) => {
   if (templateId) {
     const payload = {
       name: `Coaching Agreement — ${clientName}`,
-      recipients: [{ id: '1', name: clientName, email: clientEmail }],
+      signees: [{ id: '1', name: clientName, email: clientEmail }],
       ...(ccRecipients.length > 0 && { ccs: ccRecipients }),
       send_emails: true,
       callback_url: 'https://ghl-stripe-webhook-production.up.railway.app/signwell-webhook',
