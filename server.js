@@ -308,15 +308,15 @@ app.post('/send-contract', async (req, res) => {
 
   if (templateId) {
     const payload = {
+      template_id: templateId,
       name: `Coaching Agreement — ${clientName}`,
-      signees: [{ id: '1', name: clientName, email: clientEmail }],
-      ...(ccRecipients.length > 0 && { ccs: ccRecipients }),
-      send_emails: true,
+      recipients: [{ id: '1', name: clientName, email: clientEmail, send_email: true }],
+      ...(ccRecipients.length > 0 && { copied_contacts: ccRecipients }),
       callback_url: 'https://ghl-stripe-webhook-production.up.railway.app/signwell-webhook',
     };
     console.log(`Using SignWell template ${templateId} for clientId "${clientId}"`);
     console.log('SignWell template request body:', JSON.stringify(payload, null, 2));
-    signwellRes = await fetch(`${SIGNWELL_BASE}/document_templates/${templateId}/documents`, {
+    signwellRes = await fetch(`${SIGNWELL_BASE}/document_templates/documents`, {
       method: 'POST',
       headers: { 'X-Api-Key': process.env.SIGNWELL_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
