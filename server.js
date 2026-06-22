@@ -289,67 +289,42 @@ app.post('/generate-contract', async (req, res) => {
   }
 });
 
-const SIGNWELL_TEMPLATES = {
-  'cat-peters': 'ffee2537-dcc7-4432-b3f9-524ad6383c88',
-};
-
 app.post('/send-contract', async (req, res) => {
   const { clientId, clientName, clientEmail, investmentAmount, startDate, packageName, customTerms } = req.body;
   if (!clientId || !clientName || !clientEmail || !investmentAmount || !startDate) {
     return res.status(400).json({ error: 'Missing required fields: clientId, clientName, clientEmail, investmentAmount, startDate' });
   }
 
+  let pdf;
+  try {
+    const html = await fetchContractTemplate(clientId, { clientName, startDate, investmentAmount, packageName, customTerms });
+    pdf = await generateContractPDF(html);
+  } catch (err) {
+    console.error('PDF generation failed:', err.message);
+    return res.status(500).json({ error: 'PDF generation failed', details: err.message });
+  }
+
+  const safeName = clientName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
   const ccRecipients = process.env.COACH_EMAIL
     ? [{ email: process.env.COACH_EMAIL }]
     : [];
-
-  const templateId = SIGNWELL_TEMPLATES[clientId];
-  let signwellRes;
-
-  if (templateId) {
-    const payload = {
-      template_id: templateId,
-      name: `Coaching Agreement — ${clientName}`,
-      recipients: [{ id: '1', name: clientName, email: clientEmail, placeholder_name: 'Client Signature' }],
-      ...(ccRecipients.length > 0 && { copied_contacts: ccRecipients }),
-      send_emails: true,
-      callback_url: 'https://ghl-stripe-webhook-production.up.railway.app/signwell-webhook',
-    };
-    console.log(`Using SignWell template ${templateId} for clientId "${clientId}"`);
-    console.log('SignWell template request body:', JSON.stringify(payload, null, 2));
-    signwellRes = await fetch(`${SIGNWELL_BASE}/document_templates/documents`, {
-      method: 'POST',
-      headers: { 'X-Api-Key': process.env.SIGNWELL_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-  } else {
-    let pdf;
-    try {
-      const html = await fetchContractTemplate(clientId, { clientName, startDate, investmentAmount, packageName, customTerms });
-      pdf = await generateContractPDF(html);
-    } catch (err) {
-      console.error('PDF generation failed:', err.message);
-      return res.status(500).json({ error: 'PDF generation failed', details: err.message });
-    }
-    const safeName = clientName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
-    const payload = {
-      name: `Coaching Agreement — ${clientName}`,
-      files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: pdf.toString('base64') }],
-      recipients: [{ id: '1', name: clientName, email: clientEmail }],
-      ...(ccRecipients.length > 0 && { ccs: ccRecipients }),
-      fields: [[
-        { type: 'signature', recipient_id: '1', page: 2, x: 72, y: 500, width: 200, height: 50 },
-      ]],
-      send_emails: true,
-      callback_url: 'https://ghl-stripe-webhook-production.up.railway.app/signwell-webhook',
-    };
-    console.log('SignWell request body:', JSON.stringify({ ...payload, files: '[omitted]' }, null, 2));
-    signwellRes = await fetch(`${SIGNWELL_BASE}/documents/`, {
-      method: 'POST',
-      headers: { 'X-Api-Key': process.env.SIGNWELL_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-  }
+  const payload = {
+    name: `Coaching Agreement — ${clientName}`,
+    files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: pdf.toString('base64') }],
+    recipients: [{ id: '1', name: clientName, email: clientEmail }],
+    ...(ccRecipients.length > 0 && { ccs: ccRecipients }),
+    fields: [[
+      { type: 'signature', recipient_id: '1', page: 2, x: 72, y: 216, width: 400, height: 50 },
+    ]],
+    send_emails: true,
+    callback_url: 'https://ghl-stripe-webhook-production.up.railway.app/signwell-webhook',
+  };
+  console.log('SignWell request body:', JSON.stringify({ ...payload, files: '[omitted]' }, null, 2));
+  const signwellRes = await fetch(`${SIGNWELL_BASE}/documents/`, {
+    method: 'POST',
+    headers: { 'X-Api-Key': process.env.SIGNWELL_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 
   if (!signwellRes.ok) {
     const body = await signwellRes.text();
