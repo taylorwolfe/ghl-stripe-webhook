@@ -310,8 +310,9 @@ app.post('/send-contract', async (req, res) => {
     const payload = {
       template_id: templateId,
       name: `Coaching Agreement — ${clientName}`,
-      recipients: [{ id: '1', name: clientName, email: clientEmail, placeholder_name: 'Client Signature', send_email: true }],
+      recipients: [{ id: '1', name: clientName, email: clientEmail, placeholder_name: 'Client Signature' }],
       ...(ccRecipients.length > 0 && { copied_contacts: ccRecipients }),
+      send_emails: true,
       callback_url: 'https://ghl-stripe-webhook-production.up.railway.app/signwell-webhook',
     };
     console.log(`Using SignWell template ${templateId} for clientId "${clientId}"`);
