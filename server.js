@@ -94,10 +94,10 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
 app.use(express.json());
 
 function getClientConfig(clientId) {
-  const suffix = clientId ? `_${clientId.toUpperCase().replace(/-/g, '_')}` : '';
+  const prefix = clientId ? clientId.toUpperCase().replace(/-/g, '_') : '';
   return {
-    stripeKey: process.env[`STRIPE_SECRET_KEY${suffix}`] || process.env.STRIPE_SECRET_KEY,
-    ghlWebhookUrl: process.env[`GHL_WORKFLOW_WEBHOOK_URL${suffix}`] || process.env.GHL_WORKFLOW_WEBHOOK_URL,
+    stripeKey: (prefix && process.env[`${prefix}_STRIPE_KEY`]) || process.env.STRIPE_SECRET_KEY,
+    ghlWebhookUrl: (prefix && process.env[`${prefix}_GHL_WEBHOOK`]) || process.env.GHL_WORKFLOW_WEBHOOK_URL,
   };
 }
 
