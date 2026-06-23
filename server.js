@@ -93,10 +93,18 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
 // Global JSON parser for all other routes
 app.use(express.json());
 
+function getClientConfig(clientId) {
+  const suffix = clientId ? `_${clientId.toUpperCase().replace(/-/g, '_')}` : '';
+  return {
+    stripeKey: process.env[`STRIPE_SECRET_KEY${suffix}`] || process.env.STRIPE_SECRET_KEY,
+    ghlWebhookUrl: process.env[`GHL_WORKFLOW_WEBHOOK_URL${suffix}`] || process.env.GHL_WORKFLOW_WEBHOOK_URL,
+  };
+}
+
 app.post('/webhook', async (req, res) => {
   console.log('GHL webhook payload:', JSON.stringify(req.body, null, 2));
 
-  const { email, name, investment_amount } = req.body;
+  const { clientId, email, name, investment_amount } = req.body;
 
   if (!email || !investment_amount) {
     return res.status(400).json({ error: 'Missing required fields: email, investment_amount' });
@@ -107,24 +115,28 @@ app.post('/webhook', async (req, res) => {
     return res.status(400).json({ error: 'investment_amount must be a positive number' });
   }
 
+  const { stripeKey, ghlWebhookUrl } = getClientConfig(clientId);
+  const stripeClient = Stripe(stripeKey);
+  console.log(`Using Stripe key for clientId "${clientId || 'default'}", GHL webhook: ${ghlWebhookUrl}`);
+
   // Find or create a Stripe customer by email
-  const existingCustomers = await stripe.customers.list({ email, limit: 1 });
+  const existingCustomers = await stripeClient.customers.list({ email, limit: 1 });
   let customer;
   if (existingCustomers.data.length > 0) {
     customer = existingCustomers.data[0];
   } else {
-    customer = await stripe.customers.create({ email, name: name || undefined });
+    customer = await stripeClient.customers.create({ email, name: name || undefined });
   }
 
   // Create the invoice first so the item can be explicitly attached to it
-  const invoice = await stripe.invoices.create({
+  const invoice = await stripeClient.invoices.create({
     customer: customer.id,
     collection_method: 'send_invoice',
     days_until_due: 30,
     auto_advance: true,
   });
 
-  await stripe.invoiceItems.create({
+  await stripeClient.invoiceItems.create({
     customer: customer.id,
     invoice: invoice.id,
     amount: amountCents,
@@ -132,7 +144,7 @@ app.post('/webhook', async (req, res) => {
     description: `Investment — ${name || email}`,
   });
 
-  await stripe.invoices.sendInvoice(invoice.id);
+  await stripeClient.invoices.sendInvoice(invoice.id);
 
   console.log(`Invoice ${invoice.id} sent to ${email} for $${(amountCents / 100).toFixed(2)}`);
 
