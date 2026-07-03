@@ -201,6 +201,7 @@ async function generateContractPDF(html) {
 }
 
 const triggeredDocuments = new Set();
+const documentClientMap = new Map();
 
 async function triggerGhlWorkflow({ email, name, documentId }) {
   if (triggeredDocuments.has(documentId)) {
@@ -208,8 +209,9 @@ async function triggerGhlWorkflow({ email, name, documentId }) {
     return false;
   }
   triggeredDocuments.add(documentId);
-  const webhookUrl = process.env.GHL_WORKFLOW_WEBHOOK_URL;
-  if (!webhookUrl) throw new Error('GHL_WORKFLOW_WEBHOOK_URL env var not set');
+  const clientId = documentClientMap.get(documentId);
+  const { ghlWebhookUrl: webhookUrl } = getClientConfig(clientId);
+  if (!webhookUrl) throw new Error('No GHL webhook URL configured (set GHL_WORKFLOW_WEBHOOK_URL or a per-client variant)');
   const res = await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -346,6 +348,7 @@ app.post('/send-contract', async (req, res) => {
 
   const doc = await signwellRes.json();
   console.log(`Contract sent to ${clientEmail} via SignWell, document ID: ${doc.id}`);
+  documentClientMap.set(doc.id, clientId);
   pollUntilSigned(doc.id);
   return res.status(200).json({
     success: true,
