@@ -466,6 +466,38 @@ app.get('/connect/callback', async (req, res) => {
   return res.json({ success: true, clientId, stripeAccountId, envVar: `${prefix}_STRIPE_ACCOUNT_ID` });
 });
 
+const BASE_URL = 'https://ghl-stripe-webhook-production.up.railway.app';
+
+app.get('/connect/onboard', async (req, res) => {
+  const { clientId } = req.query;
+  if (!clientId) return res.status(400).json({ error: 'clientId query param required' });
+
+  const prefix = clientId.toUpperCase().replace(/-/g, '_');
+  let stripeAccountId = connectedAccounts.get(clientId) || process.env[`${prefix}_STRIPE_ACCOUNT_ID`];
+
+  if (!stripeAccountId) {
+    const account = await stripe.accounts.create({ type: 'express' });
+    stripeAccountId = account.id;
+    connectedAccounts.set(clientId, stripeAccountId);
+    console.log(`Created Stripe Connect Express account for clientId "${clientId}": ${stripeAccountId}`);
+    console.log(`Persist by setting env var: ${prefix}_STRIPE_ACCOUNT_ID=${stripeAccountId}`);
+  }
+
+  const accountLink = await stripe.accountLinks.create({
+    account: stripeAccountId,
+    refresh_url: `${BASE_URL}/connect/onboard?clientId=${encodeURIComponent(clientId)}`,
+    return_url: `${BASE_URL}/connect/complete?clientId=${encodeURIComponent(clientId)}`,
+    type: 'account_onboarding',
+  });
+
+  return res.json({ url: accountLink.url, stripeAccountId, envVar: `${prefix}_STRIPE_ACCOUNT_ID` });
+});
+
+app.get('/connect/complete', (req, res) => {
+  const { clientId } = req.query;
+  res.json({ success: true, message: `Stripe Connect onboarding complete for clientId "${clientId}". You may close this window.` });
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 app.get('/debug-env', (_req, res) => {
