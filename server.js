@@ -93,11 +93,23 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
 // Global JSON parser for all other routes
 app.use(express.json());
 
+// Runtime store for Stripe Connect account IDs acquired via OAuth.
+// Seeded from env vars on first lookup; also populated by /connect/callback.
+const connectedAccounts = new Map();
+
 function getClientConfig(clientId) {
   const prefix = clientId ? clientId.toUpperCase().replace(/-/g, '_') : '';
+  const stripeAccountId =
+    (prefix && (connectedAccounts.get(clientId) || process.env[`${prefix}_STRIPE_ACCOUNT_ID`])) || null;
   return {
-    stripeKey: (prefix && process.env[`${prefix}_STRIPE_KEY`]) || process.env.STRIPE_SECRET_KEY,
+    // When a Connect account is linked, always use the platform key + stripeAccount header.
+    // Otherwise fall back to the per-client restricted key (legacy) then the platform key.
+    stripeKey:
+      stripeAccountId
+        ? process.env.STRIPE_SECRET_KEY
+        : (prefix && process.env[`${prefix}_STRIPE_KEY`]) || process.env.STRIPE_SECRET_KEY,
     ghlWebhookUrl: (prefix && process.env[`${prefix}_GHL_WEBHOOK`]) || process.env.GHL_WORKFLOW_WEBHOOK_URL,
+    stripeAccountId,
   };
 }
 
@@ -115,17 +127,22 @@ app.post('/webhook', async (req, res) => {
     return res.status(400).json({ error: 'investment_amount must be a positive number' });
   }
 
-  const { stripeKey, ghlWebhookUrl } = getClientConfig(clientId);
+  const { stripeKey, ghlWebhookUrl, stripeAccountId } = getClientConfig(clientId);
   const stripeClient = Stripe(stripeKey);
-  console.log(`Using Stripe key for clientId "${clientId || 'default'}", GHL webhook: ${ghlWebhookUrl}`);
+  const stripeOpts = stripeAccountId ? { stripeAccount: stripeAccountId } : {};
+  console.log(
+    stripeAccountId
+      ? `Using Stripe Connect account ${stripeAccountId} for clientId "${clientId}", GHL webhook: ${ghlWebhookUrl}`
+      : `Using Stripe key for clientId "${clientId || 'default'}", GHL webhook: ${ghlWebhookUrl}`
+  );
 
   // Find or create a Stripe customer by email
-  const existingCustomers = await stripeClient.customers.list({ email, limit: 1 });
+  const existingCustomers = await stripeClient.customers.list({ email, limit: 1 }, stripeOpts);
   let customer;
   if (existingCustomers.data.length > 0) {
     customer = existingCustomers.data[0];
   } else {
-    customer = await stripeClient.customers.create({ email, name: name || undefined });
+    customer = await stripeClient.customers.create({ email, name: name || undefined }, stripeOpts);
   }
 
   // Create the invoice first so the item can be explicitly attached to it
@@ -134,7 +151,7 @@ app.post('/webhook', async (req, res) => {
     collection_method: 'send_invoice',
     days_until_due: 30,
     auto_advance: true,
-  });
+  }, stripeOpts);
 
   await stripeClient.invoiceItems.create({
     customer: customer.id,
@@ -142,9 +159,9 @@ app.post('/webhook', async (req, res) => {
     amount: amountCents,
     currency: 'usd',
     description: `Investment — ${name || email}`,
-  });
+  }, stripeOpts);
 
-  await stripeClient.invoices.sendInvoice(invoice.id);
+  await stripeClient.invoices.sendInvoice(invoice.id, {}, stripeOpts);
 
   console.log(`Invoice ${invoice.id} sent to ${email} for $${(amountCents / 100).toFixed(2)}`);
 
@@ -401,14 +418,66 @@ app.get('/check-contract/:documentId', async (req, res) => {
   }
 });
 
+// --- Stripe Connect OAuth ---
+
+app.get('/connect/oauth', (req, res) => {
+  const { clientId } = req.query;
+  if (!clientId) return res.status(400).json({ error: 'clientId query param required' });
+  const stripeClientId = process.env.STRIPE_CLIENT_ID;
+  if (!stripeClientId) return res.status(500).json({ error: 'STRIPE_CLIENT_ID env var not set' });
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: stripeClientId,
+    scope: 'read_write',
+    state: clientId,
+  });
+  res.redirect(`https://connect.stripe.com/oauth/authorize?${params}`);
+});
+
+app.get('/connect/callback', async (req, res) => {
+  const { code, state: clientId, error, error_description } = req.query;
+  if (error) return res.status(400).json({ error: error_description || error });
+  if (!code || !clientId) return res.status(400).json({ error: 'Missing code or state param' });
+
+  const tokenRes = await fetch('https://connect.stripe.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_secret: process.env.STRIPE_SECRET_KEY,
+      code,
+      grant_type: 'authorization_code',
+    }),
+  });
+
+  if (!tokenRes.ok) {
+    const body = await tokenRes.text();
+    console.error('Stripe Connect token exchange failed:', tokenRes.status, body);
+    return res.status(502).json({ error: 'Token exchange failed', details: body });
+  }
+
+  const token = await tokenRes.json();
+  const stripeAccountId = token.stripe_user_id;
+  const prefix = clientId.toUpperCase().replace(/-/g, '_');
+
+  connectedAccounts.set(clientId, stripeAccountId);
+  console.log(`Stripe Connect account linked for clientId "${clientId}": ${stripeAccountId}`);
+  console.log(`Persist this by setting env var: ${prefix}_STRIPE_ACCOUNT_ID=${stripeAccountId}`);
+
+  return res.json({ success: true, clientId, stripeAccountId, envVar: `${prefix}_STRIPE_ACCOUNT_ID` });
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 app.get('/debug-env', (_req, res) => {
-  const keys = ['GHL_WORKFLOW_WEBHOOK_URL', 'GHL_API_KEY', 'GHL_LOCATION_ID', 'SIGNWELL_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'];
+  const keys = [
+    'GHL_WORKFLOW_WEBHOOK_URL', 'GHL_API_KEY', 'GHL_LOCATION_ID',
+    'SIGNWELL_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_CLIENT_ID',
+  ];
   const result = {};
   for (const key of keys) {
     result[key] = process.env[key] ? 'set' : 'MISSING';
   }
+  result.connectedAccounts = Object.fromEntries(connectedAccounts);
   res.json(result);
 });
 
