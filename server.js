@@ -23,11 +23,19 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
     return res.status(400).json({ error: `Webhook signature verification failed: ${err.message}` });
   }
 
-  if (event.type !== 'invoice.paid') {
+  if (event.type !== 'invoice.paid' && event.type !== 'invoice_payment.paid') {
     return res.status(200).json({ received: true });
   }
 
-  const invoice = event.data.object;
+  // invoice_payment.paid's data.object is an InvoicePayment, not the Invoice
+  // itself — it only carries the invoice ID, so fetch the full invoice to get
+  // the customer (and keep the rest of this handler shape-agnostic).
+  let invoice;
+  if (event.type === 'invoice_payment.paid') {
+    invoice = await stripe.invoices.retrieve(event.data.object.invoice);
+  } else {
+    invoice = event.data.object;
+  }
   const customerId = invoice.customer;
 
   // Fetch the customer from Stripe to get their email
@@ -39,7 +47,7 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
     return res.status(200).json({ received: true });
   }
 
-  console.log(`invoice.paid for ${email}, invoice ${invoice.id}`);
+  console.log(`${event.type} for ${email}, invoice ${invoice.id}`);
 
   // Look up the contact in GHL by email
   const searchRes = await fetch(
