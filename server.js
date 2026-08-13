@@ -214,8 +214,13 @@ function escapeHtml(str) {
 
 async function fetchContractTemplate(clientId, { clientName, startDate, investmentAmount, packageName, customTerms }) {
   const url = `https://pub-bc05478d0dc049fbb076e6e51d59fe82.r2.dev/clients/${encodeURIComponent(clientId)}/contract-template.html`;
+  console.log(`Fetching contract template: ${url}`);
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch contract template for clientId "${clientId}": ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text();
+    console.error(`Contract template fetch failed for clientId "${clientId}": ${res.status} ${res.statusText}, url=${url}, body=${body}`);
+    throw new Error(`Failed to fetch contract template for clientId "${clientId}": ${res.status}`);
+  }
   const normalizedTerms = (customTerms || '').replace(/\\n/g, '\n');
   return (await res.text())
     .replace(/\{\{client_name\}\}/g, escapeHtml(clientName))
