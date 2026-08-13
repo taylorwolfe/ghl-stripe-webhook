@@ -99,8 +99,16 @@ const connectedAccounts = new Map();
 
 function getClientConfig(clientId) {
   const prefix = clientId ? clientId.toUpperCase().replace(/-/g, '_') : '';
-  const stripeAccountId =
-    (prefix && (connectedAccounts.get(clientId) || process.env[`${prefix}_STRIPE_ACCOUNT_ID`])) || null;
+  const envKey = prefix ? `${prefix}_STRIPE_ACCOUNT_ID` : null;
+  const fromMap = prefix ? connectedAccounts.get(clientId) : undefined;
+  const fromEnv = envKey ? process.env[envKey] : undefined;
+  const stripeAccountId = (prefix && (fromMap || fromEnv)) || null;
+  console.log(
+    `getClientConfig(clientId=${JSON.stringify(clientId)}): prefix=${JSON.stringify(prefix)}, ` +
+    `envKey=${JSON.stringify(envKey)}, connectedAccounts.get(clientId)=${JSON.stringify(fromMap)}, ` +
+    `process.env[envKey]=${fromEnv ? JSON.stringify(fromEnv) : String(fromEnv)}, ` +
+    `resolved stripeAccountId=${JSON.stringify(stripeAccountId)}`
+  );
   return {
     // When a Connect account is linked, always use the platform key + stripeAccount header.
     // Otherwise fall back to the per-client restricted key (legacy) then the platform key.
@@ -526,7 +534,7 @@ app.get('/connect/complete', (req, res) => {
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
-app.get('/debug-env', (_req, res) => {
+app.get('/debug-env', (req, res) => {
   const keys = [
     'GHL_WORKFLOW_WEBHOOK_URL', 'GHL_API_KEY', 'GHL_LOCATION_ID',
     'SIGNWELL_API_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_CLIENT_ID',
@@ -536,6 +544,19 @@ app.get('/debug-env', (_req, res) => {
     result[key] = process.env[key] ? 'set' : 'MISSING';
   }
   result.connectedAccounts = Object.fromEntries(connectedAccounts);
+
+  const { clientId } = req.query;
+  if (clientId) {
+    const config = getClientConfig(clientId);
+    result.clientConfig = {
+      clientId,
+      stripeAccountId: config.stripeAccountId,
+      stripeKeySource: config.stripeAccountId
+        ? 'STRIPE_SECRET_KEY (platform, via Connect)'
+        : 'per-client key or platform fallback',
+      ghlWebhookUrl: config.ghlWebhookUrl,
+    };
+  }
   res.json(result);
 });
 
