@@ -113,17 +113,34 @@ function getClientConfig(clientId) {
   };
 }
 
+// Accepts null/undefined, the literal string "null", raw numbers ("1", 1),
+// and formatted currency strings ("$1.00", "$1,000"). Returns cents, or
+// null if no valid positive amount could be parsed.
+function parseInvestmentAmountCents(investment_amount) {
+  if (investment_amount === null || investment_amount === undefined) return null;
+  const str = String(investment_amount).trim();
+  if (!str || str.toLowerCase() === 'null') return null;
+
+  const cleaned = str.replace(/[^0-9.]/g, '');
+  if (!cleaned) return null;
+
+  const dollars = parseFloat(cleaned);
+  if (isNaN(dollars) || dollars <= 0) return null;
+
+  return Math.round(dollars * 100);
+}
+
 app.post('/webhook', async (req, res) => {
   console.log('GHL webhook payload:', JSON.stringify(req.body, null, 2));
 
   const { clientId, email, name, investment_amount } = req.body;
 
-  if (!email || !investment_amount) {
-    return res.status(400).json({ error: 'Missing required fields: email, investment_amount' });
+  if (!email) {
+    return res.status(400).json({ error: 'Missing required field: email' });
   }
 
-  const amountCents = Math.round(parseFloat(String(investment_amount).replace(/[^0-9.]/g, '')) * 100);
-  if (isNaN(amountCents) || amountCents <= 0) {
+  const amountCents = parseInvestmentAmountCents(investment_amount);
+  if (amountCents === null) {
     return res.status(400).json({ error: 'investment_amount must be a positive number' });
   }
 
