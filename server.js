@@ -147,7 +147,10 @@ app.post('/webhook', async (req, res) => {
 
     const { stripeKey, ghlWebhookUrl, stripeAccountId } = getClientConfig(clientId);
     const stripeClient = Stripe(stripeKey);
-    const stripeOpts = stripeAccountId ? { stripeAccount: stripeAccountId } : {};
+    // stripe-node's arg parser can't distinguish an empty options object from a
+    // stray extra argument (it requires at least one recognized key to treat it
+    // as options), so pass undefined rather than {} when there's no Connect account.
+    const stripeOpts = stripeAccountId ? { stripeAccount: stripeAccountId } : undefined;
     console.log(
       stripeAccountId
         ? `Using Stripe Connect account ${stripeAccountId} for clientId "${clientId}", GHL webhook: ${ghlWebhookUrl}`
