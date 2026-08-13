@@ -371,6 +371,7 @@ app.post('/send-contract', async (req, res) => {
 
   const safeName = clientName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
   const prefix = clientId.toUpperCase().replace(/-/g, '_');
+  const coachName = process.env[`${prefix}_COACH_NAME`] || process.env.COACH_NAME || 'Hi Buy Book';
   const coachEmail = process.env[`${prefix}_COACH_EMAIL`] || process.env.COACH_EMAIL;
   const ccRecipients = coachEmail ? [{ email: coachEmail }] : [];
   const payload = {
@@ -378,6 +379,7 @@ app.post('/send-contract', async (req, res) => {
     files: [{ name: `coaching-contract-${safeName}.pdf`, file_base64: pdf.toString('base64') }],
     recipients: [{ id: '1', name: clientName, email: clientEmail }],
     ...(ccRecipients.length > 0 && { ccs: ccRecipients }),
+    custom_requester: { name: coachName, email: coachEmail },
     fields: [[
       { type: 'signature', recipient_id: '1', page: 2, x: 72, y: 650, width: 300, height: 80 },
     ]],
