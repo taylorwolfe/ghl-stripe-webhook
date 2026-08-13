@@ -154,6 +154,7 @@ app.post('/webhook', async (req, res) => {
   );
 
   // Find or create a Stripe customer by email
+  console.log('stripeAccountId:', stripeAccountId, 'stripeOpts:', JSON.stringify(stripeOpts));
   const existingCustomers = await stripeClient.customers.list({ email, limit: 1 }, stripeOpts);
   let customer;
   if (existingCustomers.data.length > 0) {
