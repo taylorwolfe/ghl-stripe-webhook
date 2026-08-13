@@ -131,59 +131,64 @@ function parseInvestmentAmountCents(investment_amount) {
 }
 
 app.post('/webhook', async (req, res) => {
-  console.log('GHL webhook payload:', JSON.stringify(req.body, null, 2));
+  try {
+    console.log('GHL webhook payload:', JSON.stringify(req.body, null, 2));
 
-  const { clientId, email, name, investment_amount } = req.body;
+    const { clientId, email, name, investment_amount } = req.body;
 
-  if (!email) {
-    return res.status(400).json({ error: 'Missing required field: email' });
+    if (!email) {
+      return res.status(400).json({ error: 'Missing required field: email' });
+    }
+
+    const amountCents = parseInvestmentAmountCents(investment_amount);
+    if (amountCents === null) {
+      return res.status(400).json({ error: 'investment_amount must be a positive number' });
+    }
+
+    const { stripeKey, ghlWebhookUrl, stripeAccountId } = getClientConfig(clientId);
+    const stripeClient = Stripe(stripeKey);
+    const stripeOpts = stripeAccountId ? { stripeAccount: stripeAccountId } : {};
+    console.log(
+      stripeAccountId
+        ? `Using Stripe Connect account ${stripeAccountId} for clientId "${clientId}", GHL webhook: ${ghlWebhookUrl}`
+        : `Using Stripe key for clientId "${clientId || 'default'}", GHL webhook: ${ghlWebhookUrl}`
+    );
+
+    // Find or create a Stripe customer by email
+    console.log('stripeAccountId:', stripeAccountId, 'stripeOpts:', JSON.stringify(stripeOpts));
+    const existingCustomers = await stripeClient.customers.list({ email, limit: 1 }, stripeOpts);
+    let customer;
+    if (existingCustomers.data.length > 0) {
+      customer = existingCustomers.data[0];
+    } else {
+      customer = await stripeClient.customers.create({ email, name: name || undefined }, stripeOpts);
+    }
+
+    // Create the invoice first so the item can be explicitly attached to it
+    const invoice = await stripeClient.invoices.create({
+      customer: customer.id,
+      collection_method: 'send_invoice',
+      days_until_due: 30,
+      auto_advance: true,
+    }, stripeOpts);
+
+    await stripeClient.invoiceItems.create({
+      customer: customer.id,
+      invoice: invoice.id,
+      amount: amountCents,
+      currency: 'usd',
+      description: `Investment — ${name || email}`,
+    }, stripeOpts);
+
+    await stripeClient.invoices.sendInvoice(invoice.id, {}, stripeOpts);
+
+    console.log(`Invoice ${invoice.id} sent to ${email} for $${(amountCents / 100).toFixed(2)}`);
+
+    return res.status(200).json({ success: true, invoiceId: invoice.id });
+  } catch (err) {
+    console.error('/webhook error:', err.message);
+    return res.status(500).json({ error: err.message });
   }
-
-  const amountCents = parseInvestmentAmountCents(investment_amount);
-  if (amountCents === null) {
-    return res.status(400).json({ error: 'investment_amount must be a positive number' });
-  }
-
-  const { stripeKey, ghlWebhookUrl, stripeAccountId } = getClientConfig(clientId);
-  const stripeClient = Stripe(stripeKey);
-  const stripeOpts = stripeAccountId ? { stripeAccount: stripeAccountId } : {};
-  console.log(
-    stripeAccountId
-      ? `Using Stripe Connect account ${stripeAccountId} for clientId "${clientId}", GHL webhook: ${ghlWebhookUrl}`
-      : `Using Stripe key for clientId "${clientId || 'default'}", GHL webhook: ${ghlWebhookUrl}`
-  );
-
-  // Find or create a Stripe customer by email
-  console.log('stripeAccountId:', stripeAccountId, 'stripeOpts:', JSON.stringify(stripeOpts));
-  const existingCustomers = await stripeClient.customers.list({ email, limit: 1 }, stripeOpts);
-  let customer;
-  if (existingCustomers.data.length > 0) {
-    customer = existingCustomers.data[0];
-  } else {
-    customer = await stripeClient.customers.create({ email, name: name || undefined }, stripeOpts);
-  }
-
-  // Create the invoice first so the item can be explicitly attached to it
-  const invoice = await stripeClient.invoices.create({
-    customer: customer.id,
-    collection_method: 'send_invoice',
-    days_until_due: 30,
-    auto_advance: true,
-  }, stripeOpts);
-
-  await stripeClient.invoiceItems.create({
-    customer: customer.id,
-    invoice: invoice.id,
-    amount: amountCents,
-    currency: 'usd',
-    description: `Investment — ${name || email}`,
-  }, stripeOpts);
-
-  await stripeClient.invoices.sendInvoice(invoice.id, {}, stripeOpts);
-
-  console.log(`Invoice ${invoice.id} sent to ${email} for $${(amountCents / 100).toFixed(2)}`);
-
-  return res.status(200).json({ success: true, invoiceId: invoice.id });
 });
 
 // --- Contract PDF generation ---
