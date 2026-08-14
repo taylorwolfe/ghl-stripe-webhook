@@ -56,9 +56,12 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
 
   console.log(`${event.type} for ${email}, invoice ${invoice.id}`);
 
+  const prefix = findClientPrefixForStripeAccount(event.account);
+  const ghlLocationId = (prefix && process.env[`${prefix}_GHL_LOCATION_ID`]) || GHL_LOCATION_ID;
+
   // Look up the contact in GHL by email
   const searchRes = await fetch(
-    `${GHL_BASE}/contacts/?query=${encodeURIComponent(email)}&locationId=${GHL_LOCATION_ID}`,
+    `${GHL_BASE}/contacts/?query=${encodeURIComponent(email)}&locationId=${ghlLocationId}`,
     {
       headers: {
         Authorization: `Bearer ${GHL_API_KEY}`,
@@ -134,6 +137,24 @@ function getClientConfig(clientId) {
     ghlWebhookUrl: (prefix && process.env[`${prefix}_GHL_WEBHOOK`]) || process.env.GHL_WORKFLOW_WEBHOOK_URL,
     stripeAccountId,
   };
+}
+
+// /stripe-webhook only has a Stripe connected account ID (event.account), not a
+// clientId, so recover the [PREFIX] used everywhere else by reverse-matching
+// it against the same connectedAccounts map / *_STRIPE_ACCOUNT_ID env vars
+// that getClientConfig() reads.
+function findClientPrefixForStripeAccount(stripeAccountId) {
+  if (!stripeAccountId) return null;
+  for (const [clientId, acctId] of connectedAccounts.entries()) {
+    if (acctId === stripeAccountId) return clientId.toUpperCase().replace(/-/g, '_');
+  }
+  const suffix = '_STRIPE_ACCOUNT_ID';
+  for (const key of Object.keys(process.env)) {
+    if (key.endsWith(suffix) && process.env[key] === stripeAccountId) {
+      return key.slice(0, -suffix.length);
+    }
+  }
+  return null;
 }
 
 // Accepts null/undefined, the literal string "null", raw numbers ("1", 1),
