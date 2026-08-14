@@ -57,14 +57,14 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
   console.log(`${event.type} for ${email}, invoice ${invoice.id}`);
 
   const prefix = findClientPrefixForStripeAccount(event.account);
-  const ghlLocationId = (prefix && process.env[`${prefix}_GHL_LOCATION_ID`]) || GHL_LOCATION_ID;
+  const { ghlApiKey, ghlLocationId } = resolveGhlConfig(prefix);
 
   // Look up the contact in GHL by email
   const searchRes = await fetch(
     `${GHL_BASE}/contacts/?query=${encodeURIComponent(email)}&locationId=${ghlLocationId}`,
     {
       headers: {
-        Authorization: `Bearer ${GHL_API_KEY}`,
+        Authorization: `Bearer ${ghlApiKey}`,
         Version: '2021-07-28',
       },
     }
@@ -91,7 +91,7 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
   const updateRes = await fetch(`${GHL_BASE}/contacts/${contact.id}`, {
     method: 'PUT',
     headers: {
-      Authorization: `Bearer ${GHL_API_KEY}`,
+      Authorization: `Bearer ${ghlApiKey}`,
       Version: '2021-07-28',
       'Content-Type': 'application/json',
     },
@@ -115,6 +115,16 @@ app.use(express.json());
 // Seeded from env vars on first lookup; also populated by /connect/callback.
 const connectedAccounts = new Map();
 
+// Resolves the per-client GHL credentials for a given [PREFIX] (e.g. "CAT_PETERS"),
+// falling back to the default env vars when no per-client override exists.
+function resolveGhlConfig(prefix) {
+  return {
+    ghlApiKey: (prefix && process.env[`${prefix}_GHL_API_KEY`]) || GHL_API_KEY,
+    ghlLocationId: (prefix && process.env[`${prefix}_GHL_LOCATION_ID`]) || GHL_LOCATION_ID,
+    ghlWebhookUrl: (prefix && process.env[`${prefix}_GHL_WEBHOOK`]) || process.env.GHL_WORKFLOW_WEBHOOK_URL,
+  };
+}
+
 function getClientConfig(clientId) {
   const prefix = clientId ? clientId.toUpperCase().replace(/-/g, '_') : '';
   const envKey = prefix ? `${prefix}_STRIPE_ACCOUNT_ID` : null;
@@ -134,8 +144,8 @@ function getClientConfig(clientId) {
       stripeAccountId
         ? process.env.STRIPE_SECRET_KEY
         : (prefix && process.env[`${prefix}_STRIPE_KEY`]) || process.env.STRIPE_SECRET_KEY,
-    ghlWebhookUrl: (prefix && process.env[`${prefix}_GHL_WEBHOOK`]) || process.env.GHL_WORKFLOW_WEBHOOK_URL,
     stripeAccountId,
+    ...resolveGhlConfig(prefix),
   };
 }
 
@@ -358,10 +368,12 @@ function pollUntilSigned(documentId) {
   setTimeout(attempt, INTERVAL_MS);
 }
 
-async function ghlAddTag(email, tag) {
+async function ghlAddTag(email, tag, clientId) {
+  const prefix = clientId ? clientId.toUpperCase().replace(/-/g, '_') : '';
+  const { ghlApiKey, ghlLocationId } = resolveGhlConfig(prefix);
   const searchRes = await fetch(
-    `${GHL_BASE}/contacts/?query=${encodeURIComponent(email)}&locationId=${GHL_LOCATION_ID}`,
-    { headers: { Authorization: `Bearer ${GHL_API_KEY}`, Version: '2021-07-28' } }
+    `${GHL_BASE}/contacts/?query=${encodeURIComponent(email)}&locationId=${ghlLocationId}`,
+    { headers: { Authorization: `Bearer ${ghlApiKey}`, Version: '2021-07-28' } }
   );
   if (!searchRes.ok) throw new Error(`GHL contact search failed: ${searchRes.status} ${await searchRes.text()}`);
   const { contacts } = await searchRes.json();
@@ -370,7 +382,7 @@ async function ghlAddTag(email, tag) {
   const updatedTags = Array.from(new Set([...(contact.tags || []), tag]));
   const updateRes = await fetch(`${GHL_BASE}/contacts/${contact.id}`, {
     method: 'PUT',
-    headers: { Authorization: `Bearer ${GHL_API_KEY}`, Version: '2021-07-28', 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${ghlApiKey}`, Version: '2021-07-28', 'Content-Type': 'application/json' },
     body: JSON.stringify({ tags: updatedTags }),
   });
   if (!updateRes.ok) throw new Error(`GHL contact update failed: ${updateRes.status} ${await updateRes.text()}`);
