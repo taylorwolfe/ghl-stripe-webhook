@@ -27,19 +27,26 @@ app.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (re
     return res.status(200).json({ received: true });
   }
 
+  // event.account is set when this event originates from a connected account
+  // (e.g. via Stripe Connect). Retrieves must be scoped to that account, or
+  // they'll look in the platform account's namespace and fail to find anything.
+  // Pass undefined rather than {} — stripe-node's arg parser can't tell an
+  // empty options object apart from a stray extra argument.
+  const stripeOpts = event.account ? { stripeAccount: event.account } : undefined;
+
   // invoice_payment.paid's data.object is an InvoicePayment, not the Invoice
   // itself — it only carries the invoice ID, so fetch the full invoice to get
   // the customer (and keep the rest of this handler shape-agnostic).
   let invoice;
   if (event.type === 'invoice_payment.paid') {
-    invoice = await stripe.invoices.retrieve(event.data.object.invoice);
+    invoice = await stripe.invoices.retrieve(event.data.object.invoice, stripeOpts);
   } else {
     invoice = event.data.object;
   }
   const customerId = invoice.customer;
 
   // Fetch the customer from Stripe to get their email
-  const customer = await stripe.customers.retrieve(customerId);
+  const customer = await stripe.customers.retrieve(customerId, stripeOpts);
   const email = customer.email;
 
   if (!email) {
